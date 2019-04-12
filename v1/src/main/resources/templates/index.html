@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+        <title>SWTC</title>
+        <script src="js/jquery-1.8.3.js"></script>
+        <style type="text/css">
+            body,html {
+                margin: 0;
+                padding: 0;
+                height: 100%;
+            }
+            .left,
+            .right {
+                float: left;
+                width: 50%;
+                height: 100%;
+            }
+            .left { background-color: mistyrose; }
+            .right { background-color: moccasin; }
+        </style>
+    </head>
+
+    <body>
+        <div class="left">
+            <br><br>
+            <table>
+                <tr>
+                    <td align="right">用户名</td>
+                    <td align="left"><input type="text" id="userName" ></td>
+                </tr>
+                <tr>
+                    <td align="right">密码</td>
+                    <td align="left"><input type="password" id="pwd" ></td>
+                </tr>
+                <tr>
+                    <td align="right">资产密码</td>
+                    <td align="left"><input type="password" id="ppwd" ></td>
+                </tr>
+                <tr>
+                    <td align="center" colspan="2"><input type="button" value="提交参数" id="submitParam"></td>
+                </tr>
+            </table>
+            <br>
+            <br>
+            <table>
+                <tr>
+                    <td align="right">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td>
+                    <td align="left"><img src="" alt="点击获取验证码" id="imgCode" onclick="this.src='/code?t='+new Date().getTime()" /></td>
+                </tr>
+                <tr>
+                    <td></td><td align="center" colspan="2"><input type="text" id="code" ></td>
+                </tr>
+                <tr>
+                    <td align="center" colspan="2"><input type="button" value="登陆账号" id="login"></td>
+                </tr>
+            </table>
+
+        </div>
+        <div class="right">
+            <br>
+            <br>
+            <table>
+                <tr>
+                    <td align="right">上次购买单价</td>
+                    <td align="left"><input type="text" id="upBuyPrice" ></td>
+                    <td align="right">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td>
+                    <td align="right" ><input type="button" value="查询账户" id="getAccount"></td>
+                </tr>
+                <tr>
+                    <td align="right">触发买卖的涨跌单位</td>
+                    <td align="left"><input type="text" id="priceFloatingUnit" ></td>
+                    <td align="right">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td>
+                    <td align="right" ><input type="text" id="accountSWTavailable" readonly="readonly"></td>
+                </tr>
+                <tr>
+                    <td align="right">每单数量</td>
+                    <td align="left"><input type="text" id="amount" ></td>
+                    <td align="right">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td>
+                    <td align="right" ><input type="text" id="accountCNYavailable" readonly="readonly"></td>
+                </tr>
+                <tr>
+                    <td align="right">查询频率(分钟)</td>
+                    <td align="left"><input type="text" id="frequency" ></td>
+                </tr>
+                <tr>
+                    <td align="center" colspan="2"><input type="button" value="设置挂单参数" id="orderParam"></td>
+                </tr>
+                <td align="right" ><input type="button" value="-启动-" id="start"></td>
+                <td align="left" ><input type="button" value="-停止-" id="stop"></td>
+                <td align="left" ><span>运行 </span><span id="runCount">0</span><span> 次</span></td>
+            </table>
+            <hr>
+            <table width="100%" border="0" id="log">
+                <tr><td width='15%'>挂单类型</td><td width='15%'>单价</td><td width='15%'>数量</td><td width='15%'>总额</td><td width='20%'>返回信息</td><td width='20%'>时间</td></tr>
+            </table>
+
+        </div>
+    </body>
+    <script>
+        $(function(){
+            //传入参数
+            $("#submitParam").click(function () {
+                //取出参数
+                var userName = $("#userName").val();
+                var pwd = $("#pwd").val();
+                var ppwd = $("#ppwd").val();
+                var param = "?userName="+userName+"&pwd="+pwd+"&ppwd="+ppwd;
+                $.ajax({
+                    type : "post",
+                    url : "/param"+param,
+                    success : function(data){
+                        alert(data);
+                    }
+                });
+            });
+
+            //登陆
+            $("#login").click(function () {
+                var code = $("#code").val();
+                $.ajax({
+                    type : "post",
+                    url : "/login?code="+code,
+                    success : function(data){
+                        alert(data);
+                    }
+                });
+            });
+
+            //设置挂单参数
+            //全局声明
+            var upBuyPrice;
+            var priceFloatingUnit;
+            var amount;
+            var frequency;
+            $("#orderParam").click(function () {
+                upBuyPrice = parseFloat($("#upBuyPrice").val());
+                priceFloatingUnit = parseFloat($("#priceFloatingUnit").val());
+                amount = $("#amount").val();
+                frequency = $("#frequency").val();
+            });
+
+            //定时号记录
+            var timerNum;
+            //启动
+            $("#start").click(function () {
+                timerNum = window.setInterval(function () { ifPrice() }, 1000*60*frequency);
+            });
+            //停止
+            $("#stop").click(function () {
+                window.clearInterval(timerNum);
+                runCount = 0;
+                $("#runCount").text(0);
+            });
+
+            //运行统计
+            var runCount = 0;
+
+            //判断涨跌并挂单
+            function ifPrice() {
+
+                //更新运行统计
+                runCount++;
+                $("#runCount").text(runCount);
+
+                var msg = "a";
+
+                var nowPrice = nowSWTprice();
+                var sell = (upBuyPrice + priceFloatingUnit).toFixed(5);
+                var buy = (upBuyPrice - priceFloatingUnit).toFixed(5);
+
+                if (nowPrice > sell) {
+                    var oType = "sell";
+                    var sum = (nowPrice * amount).toFixed(5);
+                    msg = submitOrder(sum, oType);
+                    var nowTime = nowTimeFormat();
+                    $("#log").append("<tr><td width='15%'>卖单</td><td width='15%'>"+nowPrice+"</td><td width='15%'>"+amount+"</td><td width='15%'>"+sum+"</td><td width='20%'>"+msg+"</td><td width='20%'>"+nowTime+"</td></tr>");
+                } else if (nowPrice < buy) {
+                    var oType = "buy";
+                    var sum = (nowPrice * amount).toFixed(5);
+                    msg = submitOrder(sum, oType);
+                    var nowTime = nowTimeFormat();
+                    $("#log").append("<tr><td width='15%'>买单</td><td width='15%'>"+nowPrice+"</td><td width='15%'>"+amount+"</td><td width='15%'>"+sum+"</td><td width='20%'>"+msg+"</td><td width='20%'>"+nowTime+"</td></tr>");
+                }
+
+                if (msg == "挂单提交成功") {
+                    upBuyPrice = nowPrice;
+                    $("#upBuyPrice").val(nowPrice);
+                } else if (msg != "a") {
+                    window.clearInterval(timerNum);
+                    runCount = 0;
+                    $("#runCount").text(0);
+                }
+            }
+
+            //挂单
+            function submitOrder(sum, oType) {
+                var msg = "";
+                $.ajax({
+                    type : "post",
+                    url : "/submitOrder?amount="+amount+"&sum="+sum+"&type="+oType,
+                    async : false,
+                    success : function(data){
+                        msg = data;
+                    }
+                });
+                return msg;
+            }
+
+            //查询SWT现在单价
+            function nowSWTprice() {
+                var nowPrice = 0;
+                $.ajax({
+                    type : "get",
+                    url : "https://ib149d5a1e5.jccdex.cn/info/alltickers",
+                    cache: false,
+                    async : false,
+                    dataType: "json",
+                    success : function(data){
+                        if(data.code == 0){
+                            var priceData = data.data;
+                            var swtArray = priceData["SWT-CNY"];
+                            nowPrice = parseFloat(swtArray[1]).toFixed(5);
+                        }
+                    }
+
+                });
+                return nowPrice;
+            };
+
+            //查询账户
+            $("#getAccount").click(function () {
+                $.ajax({
+                    type : "get",
+                    url : "/account",
+                    cache: false,
+                    dataType: "json",
+                    success : function(data){
+                        var swtSum = parseFloat(data.swt.sum).toFixed(5);
+                        var swtFreezed = parseFloat(data.swt.freezed).toFixed(5);
+                        var swtAvailable = (swtSum - swtFreezed).toFixed(5);
+
+                        var cnySum = parseFloat(data.cny.sum).toFixed(5);
+                        var cnyFreezed = parseFloat(data.cny.freezed).toFixed(5);
+                        var cnyAvailable = (cnySum - cnyFreezed).toFixed(5);
+
+                        $("#accountSWTavailable").val("SWT可用 "+swtAvailable);
+                        $("#accountCNYavailable").val("CNY可用 "+cnyAvailable);
+                    }
+
+                });
+            });
+
+            //获取yyyy-MM-dd hh:mm:ss格式的当前时间方法
+            function nowTimeFormat(){
+                var date = new Date;
+                return date.getFullYear()+"-"+((date.getMonth()+1)>9?(date.getMonth()+1):"0"+(date.getMonth()+1))+"-"+(date.getDate()<10?"0"+date.getDate():date.getDate())+" "+(date.getHours()<10?"0"+date.getHours():date.getHours())+":"+(date.getMinutes()<10?"0"+date.getMinutes():date.getMinutes())+":"+(date.getSeconds()<10?"0"+date.getSeconds():date.getSeconds());
+            }
+
+        });
+    </script>
+</html>
